@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GitHub Folder Downloader</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    #log { white-space: pre-wrap; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h2>GitHub Folder Downloader</h2>
+  <input id="url" type="text" size="80" placeholder="Paste GitHub folder URL">
+  <button onclick="downloadFromInput()">Download</button>
+  <pre id="log"></pre>
+
+<script>
+async function fetchFiles(owner, repo, path) {
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+  const resp = await fetch(apiUrl);
+  const data = await resp.json();
+  let files = [];
+  for (const item of data) {
+    if (item.type === "file") {
+      files.push({ path: item.path, download_url: item.download_url });
+    } else if (item.type === "dir") {
+      const sub = await fetchFiles(owner, repo, item.path);
+      files = files.concat(sub);
+    }
+  }
+  return files;
+}
+
+async function downloadFolder(folderUrl) {
+  log(`Fetching folder: ${folderUrl}`);
+  const match = folderUrl.match(/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)/);
+  if (!match) {
+    alert("Invalid GitHub folder URL");
+    return;
+  }
+  const [_, owner, repo, branch, path] = match;
+
+  const files = await fetchFiles(owner, repo, path);
+  const zip = new JSZip();
+
+  for (const file of files) {
+    log(`Adding ${file.path}`);
+    const resp = await fetch(file.download_url);
+    const blob = await resp.blob();
+    zip.file(file.path.replace(`${path}/`, ""), blob);
+  }
+
+  log("Generating zip...");
+  const content = await zip.generateAsync({ type: "blob" });
+  saveAs(content, `${path.split("/").pop()}.zip`);
+  log("Download ready!");
+}
+
+function downloadFromInput() {
+  const folderUrl = document.getElementById("url").value;
+  downloadFolder(folderUrl);
+}
+
+function log(msg) {
+  const logEl = document.getElementById("log");
+  logEl.textContent += msg + "\n";
+}
+
+// Auto-run if ?url=... is present
+window.addEventListener("load", () => {
+  const params = new URLSearchParams(window.location.search);
+  const folderUrl = params.get("url");
+  if (folderUrl) {
+    document.getElementById("url").value = folderUrl;
+    downloadFolder(folderUrl);
+  }
+});
+</script>
+</body>
+</html>
